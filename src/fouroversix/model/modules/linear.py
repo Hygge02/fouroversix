@@ -187,7 +187,7 @@ class FourOverSixLinear(nn.Linear):
             )
 
     @property
-    def high_precision_parameter_names(self) -> tuple[str, ...]:
+    def parameters_to_quantize(self) -> tuple[str, ...]:
         """Return the names of the high-precision parameters."""
         return ("weight",)
 
@@ -197,9 +197,6 @@ class FourOverSixLinear(nn.Linear):
         parameter: torch.Tensor,
     ) -> dict[str, Any]:
         """Get the quantized parameters for the layer."""
-
-        if parameter_name == "bias":
-            return {"bias": parameter}
 
         if parameter_name == "weight":
             config = QuantizationConfig(
