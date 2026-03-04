@@ -17,7 +17,13 @@ if TYPE_CHECKING:
 
 with rtn_img.imports():
     import torch
-    from fouroversix import FourOverSixLinear, fp4_matmul, quantize_model
+    import torch.nn as nn
+    from fouroversix import (
+        FourOverSixLinear,
+        QuantizedModule,
+        fp4_matmul,
+        quantize_model,
+    )
     from transformers import AutoModelForCausalLM
 
 
@@ -170,6 +176,12 @@ class SmoothQuantEvaluator(RTNEvaluatorImpl):
         trust_remote_code: bool,
     ) -> AutoModelForCausalLM:
         """Quantize a model using SmoothQuant."""
+
+        # Replace FourOverSixLinear with FourOverSixLinearWithSmoothing
+        QuantizedModule.register(
+            nn.Linear,
+            replace_existing_modules_in_registry=True,
+        )(FourOverSixLinearWithSmoothing)
 
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
