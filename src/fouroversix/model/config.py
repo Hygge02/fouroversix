@@ -133,7 +133,7 @@ class ModelQuantizationConfig(ModuleQuantizationConfig):
         dtype (DataType): The quantization data type to use for the module. Defaults to
             `DataType.nvfp4`.
         gradient_round_style (RoundStyle | None): The rounding style to use for gradient
-            tensors. If not provided, `gradient_round_style` will be used.
+            tensors. Defaults to `RoundStyle.stochastic`.
         gradient_scale_rule (ScaleRule | None): The scaling rule to use for gradient
             tensors. If not provided, `scale_rule` will be used.
         keep_master_weights (bool): Whether to keep the master weights. Defaults to
