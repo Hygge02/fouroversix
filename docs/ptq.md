@@ -22,6 +22,8 @@ Then, depending on which PTQ method you would like to test, you may need to run 
 pip install --no-deps third_party/llm-awq
 ```
 
+`awq_weight_only` uses the same dependency.
+
 ### GPTQ
 
 1. Install Fast Hadamard Transform

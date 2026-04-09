@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from ..utils import PTQMethod
 from .awq import AWQEvaluator
+from .awq_weight_only import AWQWeightOnlyEvaluator
 from .gptq import GPTQEvaluator
 from .high_precision import HighPrecisionEvaluator
 from .rtn import RTNEvaluator
@@ -19,6 +20,8 @@ def get_evaluator(ptq_method: PTQMethod) -> type[PTQEvaluator]:
 
     if ptq_method == PTQMethod.awq:
         return AWQEvaluator
+    if ptq_method == PTQMethod.awq_weight_only:
+        return AWQWeightOnlyEvaluator
     if ptq_method == PTQMethod.gptq:
         return GPTQEvaluator
     if ptq_method == PTQMethod.high_precision:

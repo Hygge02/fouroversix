@@ -3,9 +3,11 @@ from importlib.metadata import version
 from .matmul import fp4_matmul
 from .model import (
     FourOverSixLinear,
+    FourOverSixWeightOnlyLinear,
     ModelQuantizationConfig,
     ModuleQuantizationConfig,
     QuantizedModule,
+    apply_offline_weight_quantization,
     quantize_model,
 )
 from .quantize import QuantizationConfig, QuantizedTensor, quantize_to_fp4
@@ -17,6 +19,7 @@ __version__ = version("fouroversix")
 __all__ = [
     "DataType",
     "FourOverSixLinear",
+    "FourOverSixWeightOnlyLinear",
     "MatmulBackend",
     "ModelQuantizationConfig",
     "ModuleQuantizationConfig",
@@ -27,6 +30,7 @@ __all__ = [
     "RoundStyle",
     "ScaleRule",
     "WeightConversions",
+    "apply_offline_weight_quantization",
     "fp4_matmul",
     "quantize_model",
     "quantize_to_fp4",

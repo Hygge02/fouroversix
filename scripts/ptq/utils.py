@@ -14,6 +14,7 @@ class PTQMethod(str, Enum):
     """Methods of post-training quantization."""
 
     awq = "awq"
+    awq_weight_only = "awq_weight_only"
     high_precision = "high_precision"
     gptq = "gptq"
     rtn = "rtn"

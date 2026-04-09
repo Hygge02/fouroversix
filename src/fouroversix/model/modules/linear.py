@@ -2,6 +2,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from fouroversix.matmul import fp4_matmul
 from fouroversix.model.config import ModuleQuantizationConfig
 from fouroversix.model.quantize import QuantizedModule
@@ -263,3 +264,37 @@ class FourOverSixLinear(nn.Linear):
             self.quantized_weight(),
             self.bias,
         )
+
+
+class FourOverSixWeightOnlyLinear(FourOverSixLinear):
+    """
+    Drop-in replacement for `nn.Linear` that quantizes only the weight offline.
+
+    Inputs remain in high precision during the forward pass.
+    """
+
+    def quantized_weight_tensor(self) -> QuantizedTensor:
+        """Return the weight as a QuantizedTensor."""
+
+        weight = self.quantized_weight()
+
+        if isinstance(weight, QuantizedTensor):
+            return weight
+
+        if isinstance(weight, (nn.Parameter, torch.Tensor)):
+            return quantize_to_fp4(weight.data, self.config.get_weight_config())
+
+        msg = f"Unsupported weight type: {type(weight)}"
+        raise TypeError(msg)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """Forward pass for the weight-only FP4 linear layer."""
+
+        out = F.linear(
+            input,
+            self.quantized_weight_tensor().dequantize(dtype=input.dtype),
+            self.bias,
+        )
+
+        output_dtype = self.config.output_dtype.torch_dtype()
+        return out if out.dtype == output_dtype else out.to(output_dtype)

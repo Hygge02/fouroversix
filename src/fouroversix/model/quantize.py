@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
+import torch
 import torch.nn as nn
 
 if TYPE_CHECKING:
@@ -125,3 +126,57 @@ def quantize_model(
             **kwargs,
         )
         model.set_submodule(module_name, quantized_module)
+
+
+def apply_offline_weight_quantization(model: nn.Module) -> None:
+    """
+    Quantize registered module weights offline and remove the master weights.
+
+    Modules participate in this pass by exposing `parameters_to_quantize` and
+    `get_quantized_parameters`.
+    """
+
+    for module in model.modules():
+        parameter_names = getattr(module, "parameters_to_quantize", ())
+
+        if not parameter_names:
+            continue
+
+        for parameter_name in parameter_names:
+            if not hasattr(module, parameter_name):
+                continue
+
+            parameter = getattr(module, parameter_name)
+            if parameter is None:
+                continue
+
+            quantized_parameters = module.get_quantized_parameters(
+                parameter_name,
+                parameter.data,
+            )
+
+            for quantized_name, quantized_value in quantized_parameters.items():
+                if hasattr(module, quantized_name):
+                    existing = getattr(module, quantized_name)
+                    if torch.is_tensor(existing):
+                        existing.data = quantized_value.to(
+                            device=existing.device,
+                            dtype=existing.dtype,
+                        )
+                    else:
+                        setattr(module, quantized_name, quantized_value)
+                else:
+                    module.register_buffer(quantized_name, quantized_value)
+
+            delattr(module, parameter_name)
+
+        if hasattr(module, "config"):
+            module.config.keep_master_weights = False
+
+        for cache_name in (
+            "_dequantized_weight",
+            "_quantized_weight",
+            "_quantized_weights",
+        ):
+            if hasattr(module, cache_name):
+                delattr(module, cache_name)
