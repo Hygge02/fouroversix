@@ -61,11 +61,14 @@ class LocalHuggingFaceAPI(HuggingFaceAPI):
         tokenizer_path = collect_model_arg("tokenizer_path")
         self.batch_size = collect_model_arg("batch_size")
         self.chat_template = collect_model_arg("chat_template")
+        self.use_chat_template = collect_model_arg("use_chat_template")
         self.tokenizer_call_args = collect_model_arg("tokenizer_call_args")
         self.enable_thinking = collect_model_arg("enable_thinking")
         if self.tokenizer_call_args is None:
             self.tokenizer_call_args = {}
         self.hidden_states = collect_model_arg("hidden_states")
+        do_sample = collect_model_arg("do_sample")
+        self.do_sample = do_sample if do_sample is not None else True
 
         # device
         if device:

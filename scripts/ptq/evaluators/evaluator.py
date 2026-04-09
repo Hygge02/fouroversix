@@ -172,11 +172,21 @@ class PTQEvaluator(ABC):
                 results = []
 
                 for log in full_results:
-                    metrics = {
-                        k: v.value
-                        for score in log.results.scores
-                        for k, v in score.metrics.items()
-                    }
+                    if log.results is None:
+                        metrics = {
+                            "status": getattr(log, "status", None),
+                            "error": (
+                                log.error.message
+                                if getattr(log, "error", None) is not None
+                                else None
+                            ),
+                        }
+                    else:
+                        metrics = {
+                            k: v.value
+                            for score in log.results.scores
+                            for k, v in score.metrics.items()
+                        }
 
                     metric_name = "accuracy" if "accuracy" in metrics else None
 
