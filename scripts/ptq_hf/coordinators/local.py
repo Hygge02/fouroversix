@@ -81,7 +81,7 @@ class LocalEvaluationCoordinator(BaseEvaluationCoordinator):
         for _ in range(experiments):
             self.save_results(*result_queue.get())
 
-    def start( # noqa: C901
+    def start(  # noqa: C901
         self,
         model_names: list[str],
         ptq_methods: list[PTQMethod],
@@ -129,7 +129,7 @@ class LocalEvaluationCoordinator(BaseEvaluationCoordinator):
                 target=self.worker,
                 args=(
                     (
-                        f"cuda:{
+                        f"""cuda:{
                             ','.join([
                                 str(i)
                                 for i in range(
@@ -137,7 +137,7 @@ class LocalEvaluationCoordinator(BaseEvaluationCoordinator):
                                     gpus_per_worker * (worker_id + 1),
                                 )
                             ])
-                        }"
+                        }"""
                         if device == "cuda"
                         else device
                     ),
