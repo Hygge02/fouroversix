@@ -2,6 +2,7 @@ __pycache__
 *.py[cod]
 .DS_Store
 .vscode
+.venv/
 env/
 trace_*.json
 *.so
@@ -12,5 +13,7 @@ ptq_logs/
 dist/
 *.egg-info/
 site/
+artifacts/
+results/
 results.db
 /ptq/
