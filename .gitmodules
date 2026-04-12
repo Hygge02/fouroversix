@@ -6,7 +6,7 @@
 	url = https://github.com/jackcook/fp-quant-fouroversix.git
 [submodule "third_party/llm-awq"]
 	path = third_party/llm-awq
-	url = https://github.com/jackcook/llm-awq-fouroversix.git
+	url = https://github.com/Hygge02/llm-awq-fouroversix.git
 [submodule "third_party/qutlass"]
 	path = third_party/qutlass
 	url = https://github.com/IST-DASLab/qutlass.git

@@ -131,8 +131,8 @@ namespace fouroversix
     {
         constexpr bool Is_nvfp4 = true;
         constexpr bool Is_rht = false;
-        launch_fp4_quant_prologue<FP4_quant_kernel_traits<128, 64, 4, Is_nvfp4, Is_transpose, T>, Is_nvfp4, Is_rht, Is_transpose>(params, stream);
-        launch_fp4_quant<FP4_quant_kernel_traits<128, 64, 4, Is_nvfp4, Is_transpose, T>, Is_nvfp4, Is_rht, Is_transpose>(params, stream);
+        launch_fp4_quant_prologue<FP4_quant_kernel_traits<128, 128, 4, Is_nvfp4, Is_transpose, T>, Is_nvfp4, Is_rht, Is_transpose>(params, stream);
+        launch_fp4_quant<FP4_quant_kernel_traits<128, 128, 4, Is_nvfp4, Is_transpose, T>, Is_nvfp4, Is_rht, Is_transpose>(params, stream);
     }
 
     template <typename T, bool Is_transpose>
@@ -140,8 +140,8 @@ namespace fouroversix
     {
         constexpr bool Is_nvfp4 = true;
         constexpr bool Is_rht = true;
-        launch_fp4_quant_prologue<FP4_quant_kernel_traits<128, 64, 4, Is_nvfp4, Is_transpose, T>, Is_nvfp4, Is_rht, Is_transpose>(params, stream);
-        launch_fp4_quant<FP4_quant_kernel_traits<128, 64, 4, Is_nvfp4, Is_transpose, T>, Is_nvfp4, Is_rht, Is_transpose>(params, stream);
+        launch_fp4_quant_prologue<FP4_quant_kernel_traits<128, 128, 4, Is_nvfp4, Is_transpose, T>, Is_nvfp4, Is_rht, Is_transpose>(params, stream);
+        launch_fp4_quant<FP4_quant_kernel_traits<128, 128, 4, Is_nvfp4, Is_transpose, T>, Is_nvfp4, Is_rht, Is_transpose>(params, stream);
     }
 
 } // namespace fouroversix

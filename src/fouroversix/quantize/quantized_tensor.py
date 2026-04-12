@@ -2,7 +2,12 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
-from fouroversix.utils import DataType, ScaleRule
+from fouroversix.utils import (
+    DataType,
+    ScaleRule,
+    blocked_layout_cols,
+    blocked_layout_rows,
+)
 
 from .utils import to_blocked
 
@@ -97,12 +102,8 @@ class QuantizedTensor:
         self.padded_shape = padded_shape
 
         if self.padded_shape is None:
-            rows_div = 128
-
-            # The scale factor layout requires 4 blocks along the K dimension for both
-            # MXFP4 and NVFP4. See:
-            # https://docs.nvidia.com/cutlass/latest/media/docs/cpp/blackwell_functionality.html#scale-factor-layouts
-            cols_div = 4 * dtype.block_size()
+            rows_div = blocked_layout_rows(dtype)
+            cols_div = blocked_layout_cols(dtype)
 
             self.padded_shape = (
                 original_shape[0]

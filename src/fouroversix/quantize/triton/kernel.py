@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import triton
 import triton.language as tl
-from fouroversix.utils import DataType, RoundStyle, ScaleRule
+from fouroversix.utils import DataType, RoundStyle, ScaleRule, blocked_layout_cols
 from triton.tools.tensor_descriptor import TensorDescriptor
 
 E2M1_MAX_VALUE = tl.constexpr(6)
@@ -559,7 +559,7 @@ def quantize_to_fp4(
         M, N = x.shape
 
     block_size_m = 128
-    block_size_n = 4 * fp4_format.block_size()
+    block_size_n = blocked_layout_cols(fp4_format)
     scale_dtype = torch.float8_e4m3fn if fp4_format == DataType.nvfp4 else torch.uint8
 
     if x_amax is None:

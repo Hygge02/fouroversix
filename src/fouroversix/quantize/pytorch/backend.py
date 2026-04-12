@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from fouroversix.utils import blocked_layout_cols, blocked_layout_rows
 from fouroversix.quantize.backend import QuantizeBackendBase
 from fouroversix.quantize.config import QuantizationConfig
 from fouroversix.quantize.quantized_tensor import QuantizedTensor
@@ -52,8 +53,8 @@ class PyTorchQuantizeBackend(QuantizeBackendBase):
 
         input_shape = (x.shape[1], x.shape[0]) if config.transpose else x.shape
 
-        rows_div = 128
-        cols_div = 4 * config.dtype.block_size()
+        rows_div = blocked_layout_rows(config.dtype)
+        cols_div = blocked_layout_cols(config.dtype)
 
         if input_shape[0] % rows_div != 0 or input_shape[1] % cols_div != 0:
             x = F.pad(

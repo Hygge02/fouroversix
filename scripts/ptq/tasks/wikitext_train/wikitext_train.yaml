@@ -12,5 +12,8 @@ metric_list:
   - metric: word_perplexity
   - metric: byte_perplexity
   - metric: bits_per_byte
+  - metric: token_perplexity
+    aggregation: weighted_perplexity
+    higher_is_better: false
 metadata:
   version: 2.0

@@ -47,6 +47,28 @@ class DataType(str, Enum):
         }.get(self)
 
 
+def blocked_layout_rows(dtype: DataType | None = None) -> int:
+    """Return the row span of a single blocked-layout tile."""
+
+    return 128
+
+
+def blocked_layout_cols(dtype: DataType) -> int:
+    """
+    Return the column span, in original tensor elements, of a blocked-layout tile.
+
+    We intentionally use a 128x128 data tile for both MXFP4 and NVFP4. For NVFP4 this
+    keeps the element block size at 16 while expanding the blocked tile to 8 scale
+    groups along K.
+    """
+
+    if dtype in {DataType.mxfp4, DataType.nvfp4}:
+        return 128
+
+    msg = f"Blocked layout is only defined for block-scaled dtypes, got {dtype!r}"
+    raise ValueError(msg)
+
+
 class MatmulBackend(str, Enum):
     """
     Backends for matrix multiplication with FP4.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from contextlib import nullcontext
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -114,21 +115,48 @@ class PTQEvaluator(ABC):
                 from lm_eval.models.huggingface import HFLM
                 from lm_eval.tasks import TaskManager
 
-                full_results = evaluator.simple_evaluate(
-                    model=HFLM(
-                        pretrained=model,
-                        device=device,
-                        max_length=max_length,
-                    ),
-                    tasks=tasks,
-                    device=device,
-                    limit=limit,
-                    task_manager=TaskManager(
-                        include_path=(
-                            Path(__file__).parent.parent / "tasks"
-                        ).as_posix(),
-                    ),
+                previous_tokenizer = os.environ.get("FOUROVERSIX_WIKITEXT_TOKENIZER")
+                previous_trust_remote_code = os.environ.get(
+                    "FOUROVERSIX_WIKITEXT_TOKENIZER_TRUST_REMOTE_CODE",
                 )
+                os.environ["FOUROVERSIX_WIKITEXT_TOKENIZER"] = model_name
+                os.environ["FOUROVERSIX_WIKITEXT_TOKENIZER_TRUST_REMOTE_CODE"] = (
+                    "1" if trust_remote_code else "0"
+                )
+
+                try:
+                    full_results = evaluator.simple_evaluate(
+                        model=HFLM(
+                            pretrained=model,
+                            device=device,
+                            max_length=max_length,
+                        ),
+                        tasks=tasks,
+                        device=device,
+                        limit=limit,
+                        task_manager=TaskManager(
+                            include_path=(
+                                Path(__file__).parent.parent / "tasks"
+                            ).as_posix(),
+                        ),
+                    )
+                finally:
+                    if previous_tokenizer is None:
+                        os.environ.pop("FOUROVERSIX_WIKITEXT_TOKENIZER", None)
+                    else:
+                        os.environ["FOUROVERSIX_WIKITEXT_TOKENIZER"] = (
+                            previous_tokenizer
+                        )
+
+                    if previous_trust_remote_code is None:
+                        os.environ.pop(
+                            "FOUROVERSIX_WIKITEXT_TOKENIZER_TRUST_REMOTE_CODE",
+                            None,
+                        )
+                    else:
+                        os.environ["FOUROVERSIX_WIKITEXT_TOKENIZER_TRUST_REMOTE_CODE"] = (
+                            previous_trust_remote_code
+                        )
 
                 results = []
 
