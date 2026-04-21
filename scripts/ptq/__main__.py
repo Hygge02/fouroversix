@@ -25,7 +25,7 @@ ptq_img = get_image(
     run_before_copy=lambda img: img.run_commands(
         "pip install vllm==0.18.0",
         'pip install "llmcompressor @ git+https://github.com/vllm-project/llm-compressor.git"',
-        'pip install "transformers @ git+https://github.com/jackcook/transformers.git@jack/dtypes"',
+        'pip install "transformers @ git+git+https://github.com/huggingface/transformers.git@1a4bc14"',
     ),
 )
 

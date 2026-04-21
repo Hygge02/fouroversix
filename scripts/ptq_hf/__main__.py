@@ -84,7 +84,7 @@ def cli(
     if isinstance(tasks, tuple):
         tasks = list(tasks)
 
-    if (
+    if dtype != DataType.bfloat16 and (
         activation_scale_rule not in dtype.supported_scale_rules
         or weight_scale_rule not in dtype.supported_scale_rules
     ):

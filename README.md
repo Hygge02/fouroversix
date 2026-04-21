@@ -50,7 +50,7 @@ First, install necessary dependencies:
 
 ```bash
 pip install vllm
-pip install "transformers @ git+https://github.com/jackcook/transformers.git@jack/dtypes"
+pip install "transformers @ git+https://github.com/huggingface/transformers.git@1a4bc14"
 ```
 
 You will also need to install [Flash Attention](https://github.com/dao-ailab/flash-attention).

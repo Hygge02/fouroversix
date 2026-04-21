@@ -289,7 +289,7 @@ def get_image(  # noqa: C901, PLR0912, PLR0915
                     *pyproject_data["project"]["optional-dependencies"]["evals"],
                 )
                 .uv_pip_install(
-                    "transformers @ git+https://github.com/jackcook/transformers.git@jack/dtypes",
+                    "transformers @ git+git+https://github.com/huggingface/transformers.git@1a4bc14",
                 )
                 .add_local_file(
                     "setup.py",
