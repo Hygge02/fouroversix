@@ -1,3 +1,4 @@
+import os
 from enum import Enum
 
 import torch
@@ -8,6 +9,38 @@ SM_110 = 11
 SM_120 = 12
 
 BLACKWELL_SM_IDS = {SM_100, SM_110, SM_120}
+
+
+def _parse_major_compute_capability(value: object) -> int:
+    value_str = str(value).strip().lower()
+    if value_str.startswith("sm_"):
+        value_str = value_str[3:]
+    elif value_str.startswith("sm"):
+        value_str = value_str[2:]
+
+    if value_str in {"100", "100a"}:
+        return SM_100
+    if value_str in {"110", "110f"}:
+        return SM_110
+    if value_str in {"120", "120a", "120f"}:
+        return SM_120
+
+    return int(float(value_str))
+
+
+def get_effective_major_compute_capability(
+    major_compute_capability: int | str | None = None,
+) -> int:
+    """Return the major compute capability used by FourOverSix dispatch."""
+
+    if major_compute_capability is not None:
+        return _parse_major_compute_capability(major_compute_capability)
+
+    forced = os.getenv("FOUROVERSIX_FORCE_MAJOR_COMPUTE_CAPABILITY")
+    if forced:
+        return _parse_major_compute_capability(forced)
+
+    return torch.cuda.get_device_capability()[0]
 
 
 class DataType(str, Enum):

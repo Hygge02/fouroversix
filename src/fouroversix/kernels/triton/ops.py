@@ -4,7 +4,13 @@ import torch
 import triton
 import triton.language as tl
 from fouroversix.quantize import QuantizedTensor, from_blocked
-from fouroversix.utils import DataType, RoundStyle, ScaleRule, ScaleType
+from fouroversix.utils import (
+    DataType,
+    RoundStyle,
+    ScaleRule,
+    ScaleType,
+    get_effective_major_compute_capability,
+)
 from triton.tools.tensor_descriptor import TensorDescriptor
 
 from .constants import SCALE_MEGABLOCK_SIZE
@@ -26,10 +32,8 @@ def quantize(  # noqa: C901, PLR0915
     transpose: bool = False,
     major_compute_capability: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
-    major_compute_capability = (
-        torch.cuda.get_device_capability()[0]
-        if major_compute_capability is None
-        else major_compute_capability
+    major_compute_capability = get_effective_major_compute_capability(
+        major_compute_capability,
     )
 
     if transpose:
@@ -221,10 +225,8 @@ def pseudo_quantize(
     transpose: bool = False,
     major_compute_capability: int | None = None,
 ) -> torch.Tensor:
-    major_compute_capability = (
-        torch.cuda.get_device_capability()[0]
-        if major_compute_capability is None
-        else major_compute_capability
+    major_compute_capability = get_effective_major_compute_capability(
+        major_compute_capability,
     )
 
     if transpose:
@@ -380,10 +382,8 @@ def dequantize_values(
     dtype: torch.dtype = torch.bfloat16,
     major_compute_capability: int | None = None,
 ) -> torch.Tensor:
-    major_compute_capability = (
-        torch.cuda.get_device_capability()[0]
-        if major_compute_capability is None
-        else major_compute_capability
+    major_compute_capability = get_effective_major_compute_capability(
+        major_compute_capability,
     )
 
     block_size_m = 128
@@ -459,10 +459,8 @@ def matmul(
     out_dtype: DataType,
     major_compute_capability: int | None = None,
 ) -> torch.Tensor:
-    major_compute_capability = (
-        torch.cuda.get_device_capability()[0]
-        if major_compute_capability is None
-        else major_compute_capability
+    major_compute_capability = get_effective_major_compute_capability(
+        major_compute_capability,
     )
 
     m = input.original_shape[0]

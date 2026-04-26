@@ -1,8 +1,12 @@
-import functools
-
 import torch
 from fouroversix.quantize.utils import to_blocked
-from fouroversix.utils import BLACKWELL_SM_IDS, DataType, RoundStyle, ScaleRule
+from fouroversix.utils import (
+    BLACKWELL_SM_IDS,
+    DataType,
+    RoundStyle,
+    ScaleRule,
+    get_effective_major_compute_capability,
+)
 
 from .backend import QuantizeBackendBase
 from .config import QuantizationConfig
@@ -16,7 +20,6 @@ class TransformerEngineQuantizeBackend(QuantizeBackendBase):
     """
 
     @classmethod
-    @functools.lru_cache
     def is_available(cls) -> bool:
         """
         Return True if the Transformer Engine backend is available on the current
@@ -25,7 +28,7 @@ class TransformerEngineQuantizeBackend(QuantizeBackendBase):
 
         if (
             not torch.cuda.is_available()
-            or torch.cuda.get_device_capability()[0] not in BLACKWELL_SM_IDS
+            or get_effective_major_compute_capability() not in BLACKWELL_SM_IDS
         ):
             return False
 

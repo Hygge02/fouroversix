@@ -1,10 +1,13 @@
-import functools
-
 import torch
 from fouroversix.quantize.backend import QuantizeBackendBase
 from fouroversix.quantize.config import QuantizationConfig
 from fouroversix.quantize.quantized_tensor import QuantizedTensor
-from fouroversix.utils import BLACKWELL_SM_IDS, DataType, RoundStyle
+from fouroversix.utils import (
+    BLACKWELL_SM_IDS,
+    DataType,
+    RoundStyle,
+    get_effective_major_compute_capability,
+)
 
 
 class CUDAQuantizeBackend(QuantizeBackendBase):
@@ -15,13 +18,12 @@ class CUDAQuantizeBackend(QuantizeBackendBase):
     """
 
     @classmethod
-    @functools.lru_cache
     def is_available(cls) -> bool:
         """Return True if the CUDA backend is available on the current machine."""
 
         if (
             not torch.cuda.is_available()
-            or torch.cuda.get_device_capability()[0] not in BLACKWELL_SM_IDS
+            or get_effective_major_compute_capability() not in BLACKWELL_SM_IDS
         ):
             return False
 

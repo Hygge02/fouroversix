@@ -1,9 +1,13 @@
-import functools
-
 import torch
 from fouroversix.matmul.backend import MatmulBackendBase
 from fouroversix.quantize import QuantizedTensor
-from fouroversix.utils import BLACKWELL_SM_IDS, SM_100, SM_120, DataType
+from fouroversix.utils import (
+    BLACKWELL_SM_IDS,
+    SM_100,
+    SM_120,
+    DataType,
+    get_effective_major_compute_capability,
+)
 
 
 class CUTLASSMatmulBackend(MatmulBackendBase):
@@ -13,13 +17,12 @@ class CUTLASSMatmulBackend(MatmulBackendBase):
     """
 
     @classmethod
-    @functools.lru_cache
     def is_available(cls) -> bool:
         """Return True if the CUTLASS backend is available on the current machine."""
 
         if (
             not torch.cuda.is_available()
-            or torch.cuda.get_device_capability()[0] not in BLACKWELL_SM_IDS
+            or get_effective_major_compute_capability() not in BLACKWELL_SM_IDS
         ):
             return False
 
@@ -59,6 +62,7 @@ class CUTLASSMatmulBackend(MatmulBackendBase):
         other: QuantizedTensor,
         *,
         out_dtype: DataType,
+        major_compute_capability: int | None = None,
     ) -> torch.Tensor:
         """
         Perform a matrix multiplication (`a @ b.T`) between two quantized tensors using
@@ -130,14 +134,17 @@ class CUTLASSMatmulBackend(MatmulBackendBase):
             ): gemm_nvfp4nvfp4_accum_fp32_out_fp16_tnt_sm120,
         }
 
+        effective_major = get_effective_major_compute_capability(
+            major_compute_capability,
+        )
         gemm_fn = gemm_fns.get(
-            (torch.cuda.get_device_capability()[0], input.dtype, out_dtype),
+            (effective_major, input.dtype, out_dtype),
         )
 
         if gemm_fn is None:
             msg = (
                 "No gemm function found for the given device capability and "
-                f"out_dtype: {torch.cuda.get_device_capability()[0]}, {out_dtype}"
+                f"out_dtype: {effective_major}, {out_dtype}"
             )
             raise ValueError(msg)
 

@@ -5,7 +5,11 @@ from fouroversix.quantize.backend import QuantizeBackendBase
 from fouroversix.quantize.config import QuantizationConfig
 from fouroversix.quantize.quantized_tensor import QuantizedTensor
 from fouroversix.quantize.utils import get_rht_matrix
-from fouroversix.utils import BLACKWELL_SM_IDS, DataType
+from fouroversix.utils import (
+    BLACKWELL_SM_IDS,
+    DataType,
+    get_effective_major_compute_capability,
+)
 
 
 class TritonQuantizeBackend(QuantizeBackendBase):
@@ -48,7 +52,7 @@ class TritonQuantizeBackend(QuantizeBackendBase):
                 DataType.if6_e3m2,
                 DataType.mxfp3_bs8,
             }
-            and torch.cuda.get_device_capability()[0] in BLACKWELL_SM_IDS
+            and get_effective_major_compute_capability() in BLACKWELL_SM_IDS
         )
 
     @classmethod
