@@ -531,20 +531,116 @@ def nvfp4_fouroversix_block_scaled_quantization_kernel(
         else 1
     )
 
-    x_block_scaled_6, x_scales_6, x_amax = compute_scale_factors_kernel(
-        x_block,
-        x_amax_ptr,
-        BLOCK_SIZE_M,
-        BLOCK_SIZE_N,
-        BLOCK_SCALE_2D,
-        E2M1_MAX_VALUE,
-        E4M3_MAX_FOUROVERSIX,
-        ROUND_STYLE,
-        SCALE_TYPE_NV_IF,
-        SCALE_GROUP_SIZE,
-        None,
-        MAJOR_COMPUTE_CAPABILITY,
-    )
+    if not BLOCK_SCALE_2D:
+        x_block_scaled_6, x_scales_6, x_amax = compute_scale_factors_kernel(
+            x_block,
+            x_amax_ptr,
+            BLOCK_SIZE_M,
+            BLOCK_SIZE_N,
+            BLOCK_SCALE_2D,
+            E2M1_MAX_VALUE,
+            E4M3_MAX_FOUROVERSIX,
+            ROUND_STYLE,
+            SCALE_TYPE_NV_IF,
+            SCALE_GROUP_SIZE,
+            None,
+            MAJOR_COMPUTE_CAPABILITY,
+        )
+    else:
+        x_amax = tl.load(x_amax_ptr)
+        x_scale_blocks = x_block.reshape(
+            BLOCK_SIZE_M,
+            BLOCK_SIZE_N // SCALE_GROUP_SIZE,
+            SCALE_GROUP_SIZE,
+        )
+
+        if x_amax == 0:
+            x_scales_hp_6 = tl.full(
+                (BLOCK_SIZE_M, BLOCK_SIZE_N // SCALE_GROUP_SIZE),
+                0,
+                dtype=tl.float32,
+            )
+        else:
+            encode_scale = tl.div_rn(
+                E2M1_MAX_VALUE * E4M3_MAX_FOUROVERSIX * SR_SCALE,
+                x_amax,
+            )
+            x_scales_hp_6 = (
+                tl.div_rn(
+                    tl.max(x_scale_blocks.abs(), axis=-1),
+                    E2M1_MAX_VALUE * SR_SCALE,
+                )
+                * encode_scale
+            )
+
+            x_scales_hp_6 = tl.where(
+                x_scales_hp_6 != x_scales_hp_6,  # noqa: PLR0124
+                0.0,
+                x_scales_hp_6,
+            )
+
+        x_scales_hp_6 = (
+            tl.max(
+                x_scales_hp_6.reshape(
+                    BLOCK_SIZE_M // SCALE_GROUP_SIZE,
+                    SCALE_GROUP_SIZE,
+                    BLOCK_SIZE_N // SCALE_GROUP_SIZE,
+                ).permute(0, 2, 1),
+                axis=-1,
+            )
+            .expand_dims(0)
+            .broadcast_to(
+                BLOCK_SIZE_M // SCALE_GROUP_SIZE,
+                SCALE_GROUP_SIZE,
+                BLOCK_SIZE_N // SCALE_GROUP_SIZE,
+            )
+            .permute(1, 0, 2)
+            .reshape(BLOCK_SIZE_M, BLOCK_SIZE_N // SCALE_GROUP_SIZE)
+        )
+
+        x_scales_hp_4 = x_scales_hp_6 * 1.5
+        x_scales_6 = convert_to_e4m3_with_rtn(
+            x_scales_hp_6,
+            MAJOR_COMPUTE_CAPABILITY,
+        )
+        x_scales_4 = convert_to_e4m3_with_rtn(
+            x_scales_hp_4,
+            MAJOR_COMPUTE_CAPABILITY,
+        )
+
+        decode_scale = tl.div_rn(
+            1,
+            tl.div_rn(E2M1_MAX_VALUE * E4M3_MAX_FOUROVERSIX * SR_SCALE, x_amax),
+        )
+
+        x_block_scaled_6 = tl.where(
+            x_scales_6.expand_dims(2).cast(tl.uint8, bitcast=True) != 0,
+            x_scale_blocks
+            * tl.div_rn(
+                1,
+                decode_scale
+                * convert_e4m3_to_high_precision(
+                    x_scales_6,
+                    x_amax.dtype,
+                    MAJOR_COMPUTE_CAPABILITY,
+                ).expand_dims(2),
+            ),
+            0,
+        )
+        x_block_scaled_4 = tl.where(
+            x_scales_4.expand_dims(2).cast(tl.uint8, bitcast=True) != 0,
+            x_scale_blocks
+            * tl.div_rn(
+                1,
+                decode_scale
+                * convert_e4m3_to_high_precision(
+                    x_scales_4,
+                    x_amax.dtype,
+                    MAJOR_COMPUTE_CAPABILITY,
+                ).expand_dims(2),
+            ),
+            0,
+        )
 
     x_6, x_6_fp16 = convert_to_e2m1x2_and_quantized_fp16(
         x_block_scaled_6,
@@ -567,20 +663,21 @@ def nvfp4_fouroversix_block_scaled_quantization_kernel(
         E2M1_MAX_VALUE * E4M3_MAX_FOUROVERSIX * SR_SCALE,
     )
 
-    x_block_scaled_4, x_scales_4, _ = compute_scale_factors_kernel(
-        x_block,
-        x_amax_ptr,
-        BLOCK_SIZE_M,
-        BLOCK_SIZE_N,
-        BLOCK_SCALE_2D,
-        E2M1_MAX_VALUE,
-        E4M3_MAX_FOUROVERSIX,
-        ROUND_STYLE,
-        SCALE_TYPE_NV_IF,
-        SCALE_GROUP_SIZE,
-        1.5,
-        MAJOR_COMPUTE_CAPABILITY,
-    )
+    if not BLOCK_SCALE_2D:
+        x_block_scaled_4, x_scales_4, _ = compute_scale_factors_kernel(
+            x_block,
+            x_amax_ptr,
+            BLOCK_SIZE_M,
+            BLOCK_SIZE_N,
+            BLOCK_SCALE_2D,
+            E2M1_MAX_VALUE,
+            E4M3_MAX_FOUROVERSIX,
+            ROUND_STYLE,
+            SCALE_TYPE_NV_IF,
+            SCALE_GROUP_SIZE,
+            1.5,
+            MAJOR_COMPUTE_CAPABILITY,
+        )
 
     x_4, x_4_fp16 = convert_to_e2m1x2_and_quantized_fp16(
         x_block_scaled_4,

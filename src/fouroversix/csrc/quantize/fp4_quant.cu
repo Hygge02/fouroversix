@@ -170,17 +170,20 @@ namespace fouroversix
         at::Tensor x_rht;
         if (is_rht)
         {
-            x_rht = torch::zeros({M_rounded, N_rounded}, x.options());
+            x_rht = torch::empty({M_rounded, N_rounded}, x.options());
         }
         else
         {
-            x_rht = torch::zeros({0, 0}, x.options());
+            x_rht = torch::empty({0, 0}, x.options());
         }
 
         /**********************
          * 5. Output buffers  *
          *********************/
-        at::Tensor x_e2m1 = torch::zeros({M_rounded, int(N_rounded / 2)}, x.options().dtype(torch::kUInt8));
+        const bool has_m_padding = M_rounded != M;
+        at::Tensor x_e2m1 = has_m_padding
+                                 ? torch::zeros({M_rounded, int(N_rounded / 2)}, x.options().dtype(torch::kUInt8))
+                                 : torch::empty({M_rounded, int(N_rounded / 2)}, x.options().dtype(torch::kUInt8));
         at::Tensor x_sf, x_sft;
         int M_sf, N_sf;
         if (is_nvfp4)
@@ -188,15 +191,19 @@ namespace fouroversix
             M_sf = int(M_rounded / 128 * 32) * int(N_rounded / 64);
             N_sf = 16;
             // N_sf = int(N_rounded / 16 * 4);
-            x_sf = torch::zeros({M_sf, N_sf}, x.options().dtype(torch::kFloat8_e4m3fn));
-            x_sft = torch::zeros({M_rounded, int(N_rounded / 16)}, x.options().dtype(torch::kFloat32));
+            x_sf = has_m_padding
+                       ? torch::zeros({M_sf, N_sf}, x.options().dtype(torch::kFloat8_e4m3fn))
+                       : torch::empty({M_sf, N_sf}, x.options().dtype(torch::kFloat8_e4m3fn));
+            x_sft = torch::empty({M_rounded, int(N_rounded / 16)}, x.options().dtype(torch::kFloat32));
         }
         else
         {
             M_sf = int(M_rounded / 128 * 32) * int(N_rounded / 128);
             N_sf = 16;
-            x_sf = torch::zeros({M_sf, N_sf}, x.options().dtype(torch::kUInt8));
-            x_sft = torch::zeros({M_rounded, int(N_rounded / 32)}, x.options().dtype(torch::kFloat32));
+            x_sf = has_m_padding
+                       ? torch::zeros({M_sf, N_sf}, x.options().dtype(torch::kUInt8))
+                       : torch::empty({M_sf, N_sf}, x.options().dtype(torch::kUInt8));
+            x_sft = torch::empty({M_rounded, int(N_rounded / 32)}, x.options().dtype(torch::kFloat32));
         }
         at::Tensor amax = torch::zeros({1}, x.options().dtype(torch::kFloat32));
 

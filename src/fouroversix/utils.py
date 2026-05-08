@@ -243,11 +243,15 @@ class QuantizeBackend(str, Enum):
     - `cuda`: CUDA implementation. Requires a Blackwell GPU, and currently only supports
         the forward pass for PTQ (no stochastic rounding, no transposed matrices, no
         RHT, no 2D block scaling).
+    - `cuda_fused`: TE-style FourOverSix CUDA implementation. Uses the fused CUDA
+        quantization kernel for supported full-FourOverSix nearest-rounding cases and
+        falls back to Triton for combinations that still need the Triton training path.
     - `pytorch`: PyTorch implementation.
     - `triton`: Triton implementation. Requires a Blackwell GPU.
     """
 
     cuda = "cuda"
+    cuda_fused = "cuda_fused"
     pytorch = "pytorch"
     transformer_engine = "transformer_engine"
     triton = "triton"

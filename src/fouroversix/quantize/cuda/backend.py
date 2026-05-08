@@ -1,3 +1,5 @@
+import random
+
 import torch
 from fouroversix.quantize.backend import QuantizeBackendBase
 from fouroversix.quantize.config import QuantizationConfig
@@ -5,6 +7,7 @@ from fouroversix.quantize.quantized_tensor import QuantizedTensor
 from fouroversix.utils import (
     BLACKWELL_SM_IDS,
     DataType,
+    QuantizeBackend,
     RoundStyle,
     get_effective_major_compute_capability,
 )
@@ -54,6 +57,17 @@ class CUDAQuantizeBackend(QuantizeBackendBase):
         )
 
     @classmethod
+    def _get_rbits(cls, config: QuantizationConfig) -> int:
+        rbits = config.kwargs.get("rbits")
+        if rbits is not None:
+            return int(rbits)
+
+        if config.round_style == RoundStyle.stochastic:
+            return random.getrandbits(31)
+
+        return -1
+
+    @classmethod
     def quantize(
         cls,
         x: torch.Tensor,
@@ -81,7 +95,7 @@ class CUDAQuantizeBackend(QuantizeBackendBase):
             config.block_scale_2d,
             config.transpose,
             config.scale_rule.cuda_id,
-            config.kwargs.get("rbits", -1),
+            cls._get_rbits(config),
         )
 
         return QuantizedTensor(
@@ -93,3 +107,79 @@ class CUDAQuantizeBackend(QuantizeBackendBase):
             config.scale_rule,
             config.round_style,
         )
+
+
+class CUDAFusedQuantizeBackend(CUDAQuantizeBackend):
+    """
+    TE-style fused CUDA backend for FourOverSix quantization.
+
+    The existing C++/CUDA kernel supports the heavy FourOverSix path: NVFP4,
+    MSE/MAE/abs-max dynamic 4/6 selection, optional RHT, optional 2D scales, nearest
+    rounding, and SM100 stochastic rounding. For transposed non-2D paths, the CUDA
+    kernel reads the transposed view directly while producing the same quantized layout;
+    this avoids a separate high-precision `x.t().contiguous()` workspace.
+    """
+
+    @classmethod
+    def _can_use_fused_cuda(cls, x: torch.Tensor, config: QuantizationConfig) -> bool:
+        if not QuantizeBackendBase.can_quantize.__func__(cls, x, config):
+            return False
+
+        if x.device.type != "cuda" or x.dtype not in {torch.float16, torch.bfloat16}:
+            return False
+
+        if config.dtype != DataType.nvfp4 or config.pseudo_quantize:
+            return False
+
+        effective_n = x.shape[0] if config.transpose else x.shape[1]
+        if effective_n % 64 != 0:  # noqa: PLR2004
+            return False
+
+        if config.transpose and config.block_scale_2d:
+            return False
+
+        supported_round_styles = {RoundStyle.nearest, RoundStyle.stochastic}
+        if config.round_style not in supported_round_styles:
+            return False
+
+        if (
+            config.round_style == RoundStyle.stochastic
+            and get_effective_major_compute_capability() != 10  # noqa: PLR2004
+        ):
+            return False
+
+        return True
+
+    @classmethod
+    def can_quantize(cls, x: torch.Tensor, config: QuantizationConfig) -> bool:
+        if cls._can_use_fused_cuda(x, config):
+            return True
+
+        from fouroversix.quantize.triton import TritonQuantizeBackend
+
+        return TritonQuantizeBackend.can_quantize(x, config)
+
+    @classmethod
+    def quantize(
+        cls,
+        x: torch.Tensor,
+        config: QuantizationConfig,
+    ) -> QuantizedTensor:
+        if cls._can_use_fused_cuda(x, config):
+            return super().quantize(x, config)
+
+        fallback_config = QuantizationConfig(
+            backend=QuantizeBackend.triton,
+            block_scale_2d=config.block_scale_2d,
+            dtype=config.dtype,
+            kwargs=dict(config.kwargs),
+            pseudo_quantize=config.pseudo_quantize,
+            rht=config.rht,
+            round_style=config.round_style,
+            scale_rule=config.scale_rule,
+            transpose=config.transpose,
+        )
+
+        from fouroversix.quantize.triton import TritonQuantizeBackend
+
+        return TritonQuantizeBackend.quantize(x, fallback_config)

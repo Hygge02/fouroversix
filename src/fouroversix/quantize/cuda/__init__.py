@@ -1,3 +1,3 @@
-from .backend import CUDAQuantizeBackend
+from .backend import CUDAFusedQuantizeBackend, CUDAQuantizeBackend
 
-__all__ = ["CUDAQuantizeBackend"]
+__all__ = ["CUDAFusedQuantizeBackend", "CUDAQuantizeBackend"]

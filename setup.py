@@ -214,7 +214,11 @@ if SKIP_CUDA_BUILD:
 
     ext_modules = None
 else:
-    if Path(".git").exists():
+    cutlass_dir = Path("third_party/cutlass")
+    cutlass_header = cutlass_dir / "include/cutlass/cutlass.h"
+    if cutlass_header.exists():
+        pass
+    elif Path(".git").exists():
         subprocess.run(
             [
                 "git",
@@ -225,7 +229,7 @@ else:
             ],
             check=True,
         )
-    elif not Path("third_party/cutlass").exists():
+    elif not cutlass_dir.exists():
         msg = (
             "third_party/cutlass is missing, please use source distribution or git "
             "clone"

@@ -20,6 +20,49 @@ from .quantize import pseudo_quantization_kernel, quantization_kernel
 from .rht import rht_kernel
 
 
+@triton.jit
+def _amax_kernel(
+    x_ptr,
+    partials_ptr,
+    numel,
+    BLOCK_SIZE: tl.constexpr,
+) -> None:
+    pid = tl.program_id(0)
+    offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < numel
+    values = tl.load(x_ptr + offsets, mask=mask, other=0.0).to(tl.float32)
+    partial_amax = tl.max(tl.abs(values), axis=0)
+    tl.store(partials_ptr + pid, partial_amax)
+
+
+def _amax(x: torch.Tensor) -> torch.Tensor:
+    """Compute a scalar absolute max without materializing `x.abs()`."""
+
+    if not x.is_cuda or not x.is_contiguous() or x.numel() < 64 * 1024 * 1024:
+        return x.abs().max().float()
+
+    block_size = 8192
+    partials = x
+    while partials.numel() > 1:
+        numel = partials.numel()
+        num_blocks = triton.cdiv(numel, block_size)
+        next_partials = torch.empty(
+            (num_blocks,),
+            device=partials.device,
+            dtype=torch.float32,
+        )
+        with torch.cuda.device(partials.device):
+            _amax_kernel[(num_blocks,)](
+                partials,
+                next_partials,
+                numel,
+                BLOCK_SIZE=block_size,
+            )
+        partials = next_partials
+
+    return partials.reshape(()).float()
+
+
 def quantize(  # noqa: C901, PLR0915
     x: torch.Tensor,
     x_amax: torch.Tensor | None = None,
@@ -61,7 +104,7 @@ def quantize(  # noqa: C901, PLR0915
         )
         raise ValueError(msg)
 
-    if x_amax is None:
+    if x_amax is None and had is None:
         x_amax = (
             x.abs().max().float()
             if dtype.scale_type != ScaleType.mx
@@ -157,7 +200,7 @@ def quantize(  # noqa: C901, PLR0915
         transpose = False
 
         x_amax = (
-            x_rht.abs().max().float()
+            _amax(x_rht)
             if dtype.scale_type != ScaleType.mx
             else torch.ones(1, device=x.device, dtype=torch.float32)
         )
@@ -254,7 +297,7 @@ def pseudo_quantize(
         )
         raise ValueError(msg)
 
-    if x_amax is None:
+    if x_amax is None and had is None:
         x_amax = (
             x.abs().max().float()
             if dtype.scale_type != ScaleType.mx
@@ -338,7 +381,7 @@ def pseudo_quantize(
         transpose = False
 
         x_amax = (
-            x_rht.abs().max().float()
+            _amax(x_rht)
             if dtype.scale_type != ScaleType.mx
             else torch.ones(1, device=x.device, dtype=torch.float32)
         )

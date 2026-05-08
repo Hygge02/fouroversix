@@ -28,6 +28,68 @@ namespace fouroversix
 
     using namespace cute;
 
+    template <typename Kernel_traits, typename Params, typename TensorSmemX>
+    inline __device__ void load_transposed_x_tile_to_smem(
+        const Params &params,
+        TensorSmemX &sX,
+        const int m_block,
+        const int n_block)
+    {
+        using Element = typename Kernel_traits::Element;
+        using index_t = typename Kernel_traits::index_t;
+
+        constexpr int kBlockM = Kernel_traits::kBlockM;
+        constexpr int kBlockN = Kernel_traits::kBlockN;
+        constexpr int kVec = 8;
+        static_assert(kBlockM % kVec == 0);
+        using VecTypeX = cutlass::Array<Element, kVec>;
+
+        const int tidx = threadIdx.x;
+        const Element *x_ptr = reinterpret_cast<const Element *>(params.x_ptr);
+
+        for (int idx = tidx; idx < (kBlockM / kVec) * kBlockN; idx += blockDim.x)
+        {
+            const int col = idx / (kBlockM / kVec);
+            const int row = (idx - col * (kBlockM / kVec)) * kVec;
+            const int logical_m = m_block * kBlockM + row;
+            const int logical_n = n_block * kBlockN + col;
+
+            VecTypeX values;
+#pragma unroll
+            for (int i = 0; i < kVec; ++i)
+            {
+                values[i] = Element(0);
+            }
+
+            if (
+                logical_n < params.N &&
+                logical_m + kVec <= params.M &&
+                params.x_col_stride == 1)
+            {
+                values = *reinterpret_cast<const VecTypeX *>(
+                    x_ptr + index_t(logical_n) * params.x_row_stride + logical_m);
+            }
+            else if (logical_n < params.N)
+            {
+#pragma unroll
+                for (int i = 0; i < kVec; ++i)
+                {
+                    if (logical_m + i < params.M)
+                    {
+                        values[i] = x_ptr[index_t(logical_n) * params.x_row_stride +
+                                          index_t(logical_m + i) * params.x_col_stride];
+                    }
+                }
+            }
+
+#pragma unroll
+            for (int i = 0; i < kVec; ++i)
+            {
+                sX(row + i, col) = values[i];
+            }
+        }
+    }
+
     template <typename Kernel_traits, bool Is_nvfp4, bool Is_rht, bool Is_2d, bool Is_transpose, bool Is_rtn, int kSelectionRule, typename Params>
     inline __device__ void compute_fp4_quant_prologue_block(const Params &params, const int m_block, const int n_block)
     {
@@ -68,13 +130,6 @@ namespace fouroversix
         // Tensor Definitions
         // -------------------------------------------------------------------------
 
-        // Input X (Global Memory)
-        Tensor mX = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.x_ptr)),
-                                make_shape(params.M, params.N),
-                                make_stride(params.x_row_stride, _1{}));
-        Tensor gX = local_tile(mX(_, _), Shape<Int<kBlockM>, Int<kBlockN>>{},
-                               make_coord(m_block, n_block));
-
         Tensor mXRHT = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.x_rht_ptr)),
                                    make_shape(params.M_rounded, params.N_rounded),
                                    make_stride(params.x_rht_row_stride, _1{}));
@@ -100,30 +155,44 @@ namespace fouroversix
         // Data Loading (X -> Shared)
         // -------------------------------------------------------------------------
 
-        typename Kernel_traits::GmemTiledCopyX gmem_tiled_copy_X;
-        auto gmem_thr_copy_X = gmem_tiled_copy_X.get_thread_slice(tidx);
-
-        Tensor tXgX = gmem_thr_copy_X.partition_S(gX);
-        Tensor tXsX = gmem_thr_copy_X.partition_D(sX);
-
-        // Construct predicates for bounds checking
-        Tensor cX = make_identity_tensor(make_shape(size<0>(sX), size<1>(sX)));
-        Tensor tXcX = gmem_thr_copy_X.partition_S(cX);
-        Tensor tXpX = make_tensor<bool>(make_shape(size<2>(tXcX)));
-
-        for (int i = 0; i < size(tXpX); ++i)
+        if constexpr (Is_transpose)
         {
-            tXpX(i) = get<1>(tXcX(0, 0, i)) < params.N - n_block * kBlockN;
+            fouroversix::load_transposed_x_tile_to_smem<Kernel_traits>(
+                params, sX, m_block, n_block);
         }
+        else
+        {
+            Tensor mX = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.x_ptr)),
+                                    make_shape(params.M, params.N),
+                                    make_stride(params.x_row_stride, _1{}));
+            Tensor gX = local_tile(mX(_, _), Shape<Int<kBlockM>, Int<kBlockN>>{},
+                                   make_coord(m_block, n_block));
 
-        __syncthreads();
+            typename Kernel_traits::GmemTiledCopyX gmem_tiled_copy_X;
+            auto gmem_thr_copy_X = gmem_tiled_copy_X.get_thread_slice(tidx);
 
-        // Async copy from Global to Shared
-        fouroversix::copy<false, false, true /*Clear_OOB_MN*/, true /*Clear_OOB_K*/>(
-            gmem_tiled_copy_X, tXgX, tXsX, tXcX, tXpX, params.M - m_block * kBlockM);
+            Tensor tXgX = gmem_thr_copy_X.partition_S(gX);
+            Tensor tXsX = gmem_thr_copy_X.partition_D(sX);
 
-        cute::cp_async_fence();
-        fouroversix::cp_async_wait<0>();
+            // Construct predicates for bounds checking
+            Tensor cX = make_identity_tensor(make_shape(size<0>(sX), size<1>(sX)));
+            Tensor tXcX = gmem_thr_copy_X.partition_S(cX);
+            Tensor tXpX = make_tensor<bool>(make_shape(size<2>(tXcX)));
+
+            for (int i = 0; i < size(tXpX); ++i)
+            {
+                tXpX(i) = get<1>(tXcX(0, 0, i)) < params.N - n_block * kBlockN;
+            }
+
+            __syncthreads();
+
+            // Async copy from Global to Shared
+            fouroversix::copy<false, false, true /*Clear_OOB_MN*/, true /*Clear_OOB_K*/>(
+                gmem_tiled_copy_X, tXgX, tXsX, tXcX, tXpX, params.M - m_block * kBlockM);
+
+            cute::cp_async_fence();
+            fouroversix::cp_async_wait<0>();
+        }
         __syncthreads();
 
         // -------------------------------------------------------------------------
@@ -287,25 +356,9 @@ namespace fouroversix
         // JXGuo: assure amax is not zero before calling this kernel
         const float amax = *reinterpret_cast<float *>(params.amax_ptr);
 
-        if (amax == 0.0f)
-        {
-            return;
-        }
-
         // -------------------------------------------------------------------------
         // Tensor Definitions
         // -------------------------------------------------------------------------
-
-        // Input X (Global Memory)
-        // void *__restrict__ x_ptr = Is_rht ? params.x_rht_ptr : params.x_ptr;
-        Tensor mX = Is_rht ? make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.x_rht_ptr)),
-                                         make_shape(params.M_rounded, params.N_rounded),
-                                         make_stride(params.x_rht_row_stride, _1{}))
-                           : make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.x_ptr)),
-                                         make_shape(params.M, params.N),
-                                         make_stride(params.x_row_stride, _1{}));
-        Tensor gX = local_tile(mX(_, _), Shape<Int<kBlockM>, Int<kBlockN>>{},
-                               make_coord(m_block, n_block));
 
         Tensor mXe2m1 = make_tensor(make_gmem_ptr(reinterpret_cast<uint8_t *>(params.x_e2m1_ptr)),
                                     make_shape(params.M, params.N_rounded / 2),
@@ -326,6 +379,48 @@ namespace fouroversix
         // Tensor gSF = local_tile(mSF(_, _), Shape<Int<1>, Int<16>>{},
         //                          make_coord(m_block, n_block));
 
+        if (amax == 0.0f)
+        {
+            VecTypeXe2m1 zero_e2m1;
+#pragma unroll
+            for (int i = 0; i < kVecSizeXe2m1; ++i)
+            {
+                zero_e2m1[i] = 0;
+            }
+
+            for (int r_idx = tidx; r_idx < kBlockM; r_idx += blockDim.x)
+            {
+#pragma unroll
+                for (int i = 0; i < int(kBlockN / 2); i += kVecSizeXe2m1)
+                {
+                    *reinterpret_cast<VecTypeXe2m1 *>(&gXe2m1(r_idx, i)) = zero_e2m1;
+                }
+            }
+
+            VecTypeSF zero_sf;
+#pragma unroll
+            for (int i = 0; i < kVecSizeSF; ++i)
+            {
+                zero_sf[i] = static_cast<ScaleFactor>(0.0f);
+            }
+
+            const int gbl_blk_row_stride = int(params.N_rounded / (kGroupN * 4));
+            const int gbl_blk_col_stride = 1;
+            const int gbl_blk_idx_base = (m_block * kSmemBlockInCol) * gbl_blk_row_stride + (n_block * kSmemBlockInRow) * gbl_blk_col_stride;
+
+            for (int r_idx = tidx; r_idx < kBlockMSF; r_idx += blockDim.x)
+            {
+                const int loc_blk_idx = int(r_idx / 32);
+                const int loc_row = r_idx % 32;
+                const int loc_blk_row = int(loc_blk_idx / kSmemBlockInRow);
+                const int loc_blk_col = int(loc_blk_idx % kSmemBlockInRow);
+                const int gbl_blk_idx = gbl_blk_idx_base + loc_blk_row * gbl_blk_row_stride + loc_blk_col * gbl_blk_col_stride;
+                const index_t gbl_row = index_t(32) * gbl_blk_idx + loc_row;
+                *reinterpret_cast<VecTypeSF *>(&gSF(gbl_row, 0)) = zero_sf;
+            }
+            return;
+        }
+
         // Shared Memory Tensors
         Tensor sX = make_tensor(make_smem_ptr(reinterpret_cast<Element *>(smem)),
                                 typename Kernel_traits::SmemLayoutX{});
@@ -345,29 +440,46 @@ namespace fouroversix
         // Data Loading (X -> Shared)
         // -------------------------------------------------------------------------
 
-        typename Kernel_traits::GmemTiledCopyX gmem_tiled_copy_X;
-        auto gmem_thr_copy_X = gmem_tiled_copy_X.get_thread_slice(tidx);
-
-        Tensor tXgX = gmem_thr_copy_X.partition_S(gX);
-        Tensor tXsX = gmem_thr_copy_X.partition_D(sX);
-
-        // Construct predicates for bounds checking
-        Tensor cX = make_identity_tensor(make_shape(size<0>(sX), size<1>(sX)));
-        Tensor tXcX = gmem_thr_copy_X.partition_S(cX);
-        Tensor tXpX = make_tensor<bool>(make_shape(size<2>(tXcX)));
-
-        for (int i = 0; i < size(tXpX); ++i)
+        if constexpr (Is_transpose && !Is_rht)
         {
-            tXpX(i) = get<1>(tXcX(0, 0, i)) < params.N - n_block * kBlockN;
+            fouroversix::load_transposed_x_tile_to_smem<Kernel_traits>(
+                params, sX, m_block, n_block);
         }
+        else
+        {
+            Tensor mX = Is_rht ? make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.x_rht_ptr)),
+                                             make_shape(params.M_rounded, params.N_rounded),
+                                             make_stride(params.x_rht_row_stride, _1{}))
+                               : make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.x_ptr)),
+                                             make_shape(params.M, params.N),
+                                             make_stride(params.x_row_stride, _1{}));
+            Tensor gX = local_tile(mX(_, _), Shape<Int<kBlockM>, Int<kBlockN>>{},
+                                   make_coord(m_block, n_block));
 
-        __syncthreads();
+            typename Kernel_traits::GmemTiledCopyX gmem_tiled_copy_X;
+            auto gmem_thr_copy_X = gmem_tiled_copy_X.get_thread_slice(tidx);
 
-        // Async copy from Global to Shared
-        fouroversix::copy<false, false, true /*Clear_OOB_MN*/, true /*Clear_OOB_K*/>(
-            gmem_tiled_copy_X, tXgX, tXsX, tXcX, tXpX, params.M - m_block * kBlockM);
+            Tensor tXgX = gmem_thr_copy_X.partition_S(gX);
+            Tensor tXsX = gmem_thr_copy_X.partition_D(sX);
 
-        cute::cp_async_fence();
+            // Construct predicates for bounds checking
+            Tensor cX = make_identity_tensor(make_shape(size<0>(sX), size<1>(sX)));
+            Tensor tXcX = gmem_thr_copy_X.partition_S(cX);
+            Tensor tXpX = make_tensor<bool>(make_shape(size<2>(tXcX)));
+
+            for (int i = 0; i < size(tXpX); ++i)
+            {
+                tXpX(i) = get<1>(tXcX(0, 0, i)) < params.N - n_block * kBlockN;
+            }
+
+            __syncthreads();
+
+            // Async copy from Global to Shared
+            fouroversix::copy<false, false, true /*Clear_OOB_MN*/, true /*Clear_OOB_K*/>(
+                gmem_tiled_copy_X, tXgX, tXsX, tXcX, tXpX, params.M - m_block * kBlockM);
+
+            cute::cp_async_fence();
+        }
 
         // -------------------------------------------------------------------------
         // Data Loading (SFT -> Shared)
@@ -382,7 +494,10 @@ namespace fouroversix
             }
         }
 
-        fouroversix::cp_async_wait<0>();
+        if constexpr (!Is_transpose || Is_rht)
+        {
+            fouroversix::cp_async_wait<0>();
+        }
         __syncthreads();
 
         // -------------------------------------------------------------------------
@@ -394,6 +509,17 @@ namespace fouroversix
             const int g_row = g_idx % kNumGroupsInCol;
             const int g_col = g_idx / kNumGroupsInCol;
             const float g_max = sSFT(g_row, g_col);
+            uint32_t rbits = static_cast<uint32_t>(params.rbits);
+            if constexpr (!Is_rtn)
+            {
+                const uint32_t global_row = static_cast<uint32_t>(m_block * kBlockM + g_row);
+                const uint32_t global_group_col = static_cast<uint32_t>(
+                    n_block * kNumGroupsInRow + g_col);
+                rbits = stochastic_rounding_bits(
+                    rbits,
+                    global_row * static_cast<uint32_t>(params.N_rounded / kGroupN)
+                        + global_group_col);
+            }
 
             const Tensor sGX = make_tensor(make_smem_ptr(sX.data() + g_row * kBlockN + g_col * kGroupN),
                                            Shape<Int<1>, Int<kGroupN>>{},
@@ -413,7 +539,7 @@ namespace fouroversix
                 sf_[0] = static_cast<float>(static_cast<ScaleFactor>(sf_[0]));
                 sf_[1] = static_cast<float>(static_cast<ScaleFactor>(sf_[1]));
 
-                sf = fp4_conversion<Is_nvfp4, Is_2d, true, Is_rtn, kRule>(sGX, amax, sf_, res, params.rbits);
+                sf = fp4_conversion<Is_nvfp4, Is_2d, true, Is_rtn, kRule>(sGX, amax, sf_, res, rbits);
             }
             else
             {
@@ -435,7 +561,7 @@ namespace fouroversix
                 }
 
                 sf_val = static_cast<float>(static_cast<ScaleFactor>(sf_val));
-                sf = fp4_conversion<Is_nvfp4, false, false, Is_rtn, kRule>(sGX, amax, &sf_val, res, params.rbits);
+                sf = fp4_conversion<Is_nvfp4, false, false, Is_rtn, kRule>(sGX, amax, &sf_val, res, rbits);
             }
 
             // Write quantized data
@@ -452,7 +578,6 @@ namespace fouroversix
             const int sf_row = 32 * (blk_row * kSmemBlockInRow + blk_col) + r_in_blk % 32;
             const int sf_col = int(r_in_blk / 32) * 4 + c_in_blk;
             sSF(sf_row, sf_col) = static_cast<ScaleFactor>(sf);
-            __syncthreads();
         }
 
         // -------------------------------------------------------------------------

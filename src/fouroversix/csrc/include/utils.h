@@ -337,6 +337,21 @@ namespace fouroversix
                    : __uint_as_float(atomicMin((unsigned int *)addr, __float_as_uint(value)));
     }
 
+    __device__ __forceinline__ uint32_t stochastic_rounding_bits(uint32_t seed)
+    {
+        seed ^= seed >> 16;
+        seed *= 0x7feb352dU;
+        seed ^= seed >> 15;
+        seed *= 0x846ca68bU;
+        seed ^= seed >> 16;
+        return seed;
+    }
+
+    __device__ __forceinline__ uint32_t stochastic_rounding_bits(uint32_t seed, uint32_t offset)
+    {
+        return stochastic_rounding_bits(seed ^ (offset * 0x9e3779b9U));
+    }
+
     ////////////////////////////////////////////////////////////////////////////////////////////////////
 
     template <bool Is_4o6, bool Is_rtn, AdaptiveBlockScalingRuleType kAdaptiveBlockScalingRuleType>
@@ -502,6 +517,7 @@ namespace fouroversix
                     unsigned out_dequant_2;
                     unsigned out_dequant_3;
                     unsigned out_dequant_4;
+                    const uint32_t rbits_next = stochastic_rounding_bits(rbits, 1);
 
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ == 1000 || __CUDA_ARCH__ == 1030)
                     asm volatile(
@@ -518,7 +534,7 @@ namespace fouroversix
                         "cvt.rn.f16x2.e2m1x2 %4, byte1;\n"
                         "mov.b32 %0, {tmp0, tmp1};\n"
                         "}"
-                        : "=r"(out), "=r"(out_dequant_1), "=r"(out_dequant_2), "=r"(out_dequant_3), "=r"(out_dequant_4) : "f"(x_scaled[0]), "f"(x_scaled[1]), "f"(x_scaled[2]), "f"(x_scaled[3]), "f"(x_scaled[4]), "f"(x_scaled[5]), "f"(x_scaled[6]), "f"(x_scaled[7]), "r"(rbits), "r"(rbits));
+                        : "=r"(out), "=r"(out_dequant_1), "=r"(out_dequant_2), "=r"(out_dequant_3), "=r"(out_dequant_4) : "f"(x_scaled[0]), "f"(x_scaled[1]), "f"(x_scaled[2]), "f"(x_scaled[3]), "f"(x_scaled[4]), "f"(x_scaled[5]), "f"(x_scaled[6]), "f"(x_scaled[7]), "r"(rbits), "r"(rbits_next));
 #endif
 
                     unsigned short out_dequant_1_hi = (out_dequant_1 >> 16) & 0xFFFF;
@@ -598,6 +614,7 @@ namespace fouroversix
                 }
                 else
                 {
+                    const uint32_t rbits_next = stochastic_rounding_bits(rbits, 1);
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ == 1000 || __CUDA_ARCH__ == 1030)
                     asm volatile(
                         "{\n"
@@ -608,7 +625,7 @@ namespace fouroversix
                         "}"
                         : "=r"(out) : "f"(x_scaled[0]), "f"(x_scaled[1]), "f"(x_scaled[2]), "f"(x_scaled[3]),
                                       "f"(x_scaled[4]), "f"(x_scaled[5]), "f"(x_scaled[6]), "f"(x_scaled[7]),
-                                      "r"(rbits), "r"(rbits));
+                                      "r"(rbits), "r"(rbits_next));
 #endif
                     return reinterpret_cast<OutputType const &>(out);
                 }
@@ -646,8 +663,13 @@ namespace fouroversix
                 {
                     x[j] = static_cast<float>(tensor(i * loop_size + j));
                 }
-                res_4[i] = fp4_array_quant.convert(x, amax, sf_[0], rbits, &err[0]);
-                res_6[i] = fp4_array_quant.convert(x, amax, sf_[1], rbits, &err[1]);
+                uint32_t loop_rbits = rbits;
+                if constexpr (!Is_rtn)
+                {
+                    loop_rbits = stochastic_rounding_bits(rbits, static_cast<uint32_t>(i));
+                }
+                res_4[i] = fp4_array_quant.convert(x, amax, sf_[0], loop_rbits, &err[0]);
+                res_6[i] = fp4_array_quant.convert(x, amax, sf_[1], loop_rbits, &err[1]);
             }
 
             if (Is_2d){
@@ -684,7 +706,12 @@ namespace fouroversix
                 {
                     x[j] = static_cast<float>(tensor(i * loop_size + j));
                 }
-                res[i] = fp4_array_quant.convert(x, amax, sf_[0], rbits, nullptr);
+                uint32_t loop_rbits = rbits;
+                if constexpr (!Is_rtn)
+                {
+                    loop_rbits = stochastic_rounding_bits(rbits, static_cast<uint32_t>(i));
+                }
+                res[i] = fp4_array_quant.convert(x, amax, sf_[0], loop_rbits, nullptr);
             }
 
             return sf_[0];
